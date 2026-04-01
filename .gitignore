@@ -1,0 +1,16 @@
+# Scan results (may contain sensitive target data)
+scan_results/
+*.xml
+*.html
+*.gnmap
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
