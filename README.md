@@ -606,7 +606,7 @@ This project demonstrates practical network reconnaissance and vulnerability ass
 [![Splunk](https://img.shields.io/badge/Splunk_SIEM_Analysis-000000?style=for-the-badge&logo=splunk)](https://github.com/jesse12-21/splunk-siem-analysis)
 [![Suricata](https://img.shields.io/badge/Suricata_IDS_Rules-EF3B2D?style=for-the-badge&logo=argo)](https://github.com/jesse12-21/suricata-ids-rules)
 [![Enricher](https://img.shields.io/badge/Threat_Intel_Enricher-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://github.com/jesse12-21/threat-intel-enricher)
-[![AWS](https://img.shields.io/badge/AWS_Cloud_Security-232F3E?style=for-the-badge&logo=amazon-aws&logoColor=white)](https://github.com/jesse12-21/aws-cloud-security-lab)
+[![AWS](https://custom-icon-badges.demolab.com/badge/AWS_Cloud_Security-232F3E?style=for-the-badge&logo=aws&logoColor=white)](https://github.com/jesse12-21/aws-cloud-security-lab)
 
 <br>
 
