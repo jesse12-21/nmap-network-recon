@@ -27,6 +27,16 @@ if ! command -v nmap &> /dev/null; then
     exit 1
 fi
 
+# Counting helper.
+#   `grep -c pattern file` prints 0 AND exits 1 when there are no matches, so the
+#   common `$(grep -c ... || echo 0)` idiom yields the two-line string "0\n0" and
+#   the subsequent integer test dies with "integer expression expected" — under
+#   `set -e` that kills the script exactly when a scan finds nothing, which is the
+#   case that most needs handling. Piping into `wc -l` always yields one integer.
+count_matches() {
+    grep -c -- "$1" "$2" 2>/dev/null | head -1 || true
+}
+
 mkdir -p "$OUTPUT_DIR"
 
 echo "========================================"
@@ -49,7 +59,7 @@ nmap -sn -PE -PS80,443,22 "$TARGET" \
   -oN "$OUTPUT_DIR/${TIMESTAMP}_discovery.txt" \
   -oX "$OUTPUT_DIR/${TIMESTAMP}_discovery.xml" 2>/dev/null
 
-LIVE_HOSTS=$(grep -c "Host is up" "$OUTPUT_DIR/${TIMESTAMP}_discovery.txt" || echo "0")
+LIVE_HOSTS=$(count_matches "Host is up" "$OUTPUT_DIR/${TIMESTAMP}_discovery.txt")
 echo "  Result: $LIVE_HOSTS live host(s) discovered."
 echo ""
 
@@ -75,7 +85,7 @@ nmap -sS --top-ports 1000 -T4 $LIVE_IPS \
   -oN "$OUTPUT_DIR/${TIMESTAMP}_ports.txt" \
   -oX "$OUTPUT_DIR/${TIMESTAMP}_ports.xml" 2>/dev/null
 
-OPEN_PORTS=$(grep -c "open" "$OUTPUT_DIR/${TIMESTAMP}_ports.txt" || echo "0")
+OPEN_PORTS=$(count_matches "^[0-9]*/tcp.*open" "$OUTPUT_DIR/${TIMESTAMP}_ports.txt")
 echo "  Result: $OPEN_PORTS open port(s) found across all hosts."
 echo ""
 
@@ -104,7 +114,7 @@ nmap --script vuln $LIVE_IPS \
   -oN "$OUTPUT_DIR/${TIMESTAMP}_vulns.txt" \
   -oX "$OUTPUT_DIR/${TIMESTAMP}_vulns.xml" 2>/dev/null
 
-VULN_COUNT=$(grep -c "VULNERABLE" "$OUTPUT_DIR/${TIMESTAMP}_vulns.txt" || echo "0")
+VULN_COUNT=$(count_matches "VULNERABLE" "$OUTPUT_DIR/${TIMESTAMP}_vulns.txt")
 echo "  Result: $VULN_COUNT vulnerability indicator(s) found."
 echo ""
 

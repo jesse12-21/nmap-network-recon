@@ -1,8 +1,23 @@
 # Scan results (may contain sensitive target data)
 scan_results/
+results/
+*.gnmap
+
+# XML and HTML are excluded because live scan output lands in those formats
+# and may contain real target data. The synthetic fixtures under samples/ are
+# NOT scan output — they are test data the pytest suite depends on, and the
+# parser cannot be validated without them. Negate them explicitly.
 *.xml
 *.html
-*.gnmap
+!samples/*.xml
+!samples/*.html
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
 
 # OS files
 .DS_Store

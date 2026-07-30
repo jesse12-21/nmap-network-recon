@@ -2,12 +2,14 @@
 
 # 🔍 Network Reconnaissance & Vulnerability Scanning with Nmap
 
-### Mapping Attack Surfaces and Identifying Vulnerabilities Through Active Network Scanning
+### Active Reconnaissance, Custom NSE Tooling, and Measuring What the Defender Sees
 
-[![Nmap](https://img.shields.io/badge/Nmap-7.94SVN-005571?style=for-the-badge&logo=gnu-bash&logoColor=white)](https://nmap.org/)
+[![Nmap](https://img.shields.io/badge/Nmap-7.99-005571?style=for-the-badge&logo=gnu-bash&logoColor=white)](https://nmap.org/)
 [![Ubuntu](https://img.shields.io/badge/Ubuntu_24.04-E95420?style=for-the-badge&logo=ubuntu&logoColor=white)](https://ubuntu.com/)
 [![NSE](https://img.shields.io/badge/NSE_Scripts-Scripting_Engine-4EAA25?style=for-the-badge&logo=lua&logoColor=white)](https://nmap.org/nsedoc/)
-[![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
+[![NSE](https://img.shields.io/badge/Custom_NSE-3_Scripts-8A2BE2?style=for-the-badge&logo=lua&logoColor=white)](nse/)
+[![Purple Team](https://img.shields.io/badge/Purple_Team-Detection_Coverage-A020F0?style=for-the-badge)](docs/purple-team-coverage.md)
+[![Validate Recon](https://img.shields.io/github/actions/workflow/status/jesse12-21/nmap-network-recon/validate-recon.yml?branch=main&style=for-the-badge&label=Recon%20CI)](../../actions/workflows/validate-recon.yml)
 
 <br>
 
@@ -15,7 +17,7 @@
 
 <br>
 
-[Host Discovery](#part-1---host-discovery--network-mapping) · [Port Scanning](#part-2---port-scanning-techniques) · [Service Enumeration](#part-3---service-and-version-enumeration) · [OS Fingerprinting](#part-4---os-fingerprinting) · [NSE Vulnerability Scanning](#part-5---vulnerability-scanning-with-nse-scripts) · [Scan Automation](#part-6---automated-scanning--reporting)
+[Host Discovery](#part-1---host-discovery--network-mapping) · [Port Scanning](#part-2---port-scanning-techniques) · [Service Enumeration](#part-3---service-and-version-enumeration) · [OS Fingerprinting](#part-4---os-fingerprinting) · [NSE Vulnerability Scanning](#part-5---vulnerability-scanning-with-nse-scripts) · [Scan Automation](#part-6---automated-scanning--reporting) · [Custom NSE](#part-7---custom-nse-scripts) · [Scans to Data](#part-8---turning-scans-into-data) · [Purple Team](#part-9---purple-team-detection-coverage) · [Responsibly](#part-10---scanning-responsibly)
 
 </div>
 
@@ -68,6 +70,62 @@ All scanning is performed in an isolated virtual lab. No external or unauthorize
 | **Target** | Metasploitable 2 | Intentionally vulnerable target | 192.168.56.102 |
 
 > **Why Metasploitable 2?** It's a deliberately vulnerable Linux VM maintained for security training. It contains outdated services, weak configurations, and known vulnerabilities — providing a realistic and legal target for practicing network reconnaissance.
+
+### 📂 Repository Structure
+
+<div align="center">
+<img src="assets/repo-structure.png" alt="Repository structure diagram. Left panel lists the file tree: README, LICENSE, .github/workflows, assets, nse with three custom scripts, parsers, tests, samples, profiles, scripts, and docs — with files added in the July 2026 refresh highlighted in green and the two revised shell scripts in amber. Right panel describes each file's purpose." width="900">
+</div>
+
+<br>
+
+<details>
+<summary><strong>Text version (click to expand)</strong></summary>
+
+```
+.
+├── README.md                                  ← You are here
+├── LICENSE
+├── .github/workflows/
+│   └── validate-recon.yml                     ← CI: NSE engine validation, luacheck, pytest
+├── assets/                                    ← Screenshots referenced in this README
+├── nse/                                       ← Custom Nmap Scripting Engine scripts
+│   ├── tls-pq-readiness.nse                   ← Post-quantum TLS probe (X25519MLKEM768)
+│   ├── http-security-headers.nse              ← Graded security header audit
+│   └── http-scan-attribution.nse              ← Purple-team engagement marker
+├── parsers/
+│   └── nmap_to_siem.py                        ← XML → CSV / CIM JSON, with scan diffing
+├── tests/
+│   └── test_nmap_to_siem.py                   ← 20 pytest cases
+├── samples/                                   ← Synthetic Nmap XML fixtures (RFC 5737)
+│   ├── scan-baseline.xml
+│   └── scan-followup.xml
+├── profiles/
+│   ├── profiles.env                           ← Scan profiles, quiet through thorough, + IPv6
+│   └── README.md
+├── scripts/
+│   ├── network_scan.sh                        ← Four-phase assessment (counting bug fixed)
+│   └── quick_scan.sh                          ← Single-host scan (double scan removed)
+└── docs/
+    ├── purple-team-coverage.md                ← Detection coverage against the blue repos
+    ├── authorization.md                       ← Scope, legality, safe scanning practice
+    └── known-limitations.md                   ← Tested findings and coverage gaps
+```
+
+</details>
+
+### Running the toolkit
+
+```bash
+# validate the NSE scripts with Nmap's own Lua engine
+for s in nse/*.nse; do nmap --script-help "./$s" >/dev/null && echo "ok $s"; done
+
+# run the parser test suite
+python3 -m pytest tests/ -v
+
+# convert a scan to SIEM-ready records
+python3 parsers/nmap_to_siem.py scan.xml --format json --scanner-host 10.0.2.15
+```
 
 ---
 
@@ -547,6 +605,175 @@ echo "========================================"
 
 ---
 
+## Part 7 - Custom NSE Scripts
+
+Parts 1–6 use Nmap's built-in scripts. This section writes new ones, which is the difference between operating a tool and extending it.
+
+All three live in [`nse/`](nse/), are in the `safe` category, and are validated in CI by Nmap's own Lua engine.
+
+### Why the Nmap engine is the validator
+
+`nmap --script-help` runs a script through the same Lua interpreter that executes it during a scan, and reports syntax errors with file and line:
+
+```
+$ nmap --script-help ./nse/broken.nse
+NSE: failed to initialize the script engine:
+/usr/share/nmap/nse_main.lua:266: ./broken.nse:6: ')' expected near 'return'
+```
+
+That is the closest thing NSE has to a compiler, and it is what CI runs on every push — the same approach the companion Suricata project takes with `suricata -T`.
+
+### `tls-pq-readiness.nse`
+
+Determines whether a TLS server supports hybrid post-quantum key exchange, by sending a ClientHello advertising **only** post-quantum groups. A server that completes the handshake supports one; a server that sends a handshake_failure alert does not.
+
+```bash
+nmap --script tls-pq-readiness -p 443 <target>
+```
+
+*Illustrative output:*
+
+```
+PORT    STATE SERVICE
+443/tcp open  https
+| tls-pq-readiness:
+|   post_quantum: not supported
+|   groups_offered: X25519MLKEM768, SecP256r1MLKEM768, SecP384r1MLKEM1024
+|_  note: Classical key agreement only. Sessions are exposed to harvest-now-decrypt-later.
+```
+
+**An implementation detail worth explaining.** Nmap's bundled `nselib/tls.lua` carries the IANA supported-groups registry, but on 7.94 it contains no post-quantum entries — the code points were standardised after that release. Rather than requiring a newer Nmap, the script injects them at runtime:
+
+```lua
+tls.ELLIPTIC_CURVES["X25519MLKEM768"] = 4588   -- 0x11EC
+```
+
+This works because the extension helper performs a plain table lookup. Asking users to upgrade Nmap to run a script is a poor trade when two lines suffice.
+
+This is the scanning-side counterpart to the post-quantum detection work in the [Wireshark](https://github.com/jesse12-21/wireshark-threat-detection) and [Suricata](https://github.com/jesse12-21/suricata-ids-rules) projects — the same property, measured actively here and passively there.
+
+### `http-security-headers.nse`
+
+Audits six security headers and separately flags version-disclosing ones, grading rather than pass/fail:
+
+```
+| http-security-headers:
+|   grade: C (3/6 present)
+|   present: Strict-Transport-Security, X-Content-Type-Options, X-Frame-Options
+|   missing: Content-Security-Policy, Referrer-Policy, Permissions-Policy
+|_  disclosure: server: Apache/2.4.41 (Ubuntu); x-powered-by: PHP/7.4.3
+```
+
+Header presence is a configuration signal, not a vulnerability — a missing CSP does not mean a site is exploitable, it means one layer of defence in depth is absent. The grading reflects that.
+
+### `http-scan-attribution.nse`
+
+Tags scan traffic with an engagement identifier so a SOC can attribute it:
+
+```bash
+nmap --script http-scan-attribution \
+  --script-args http-scan-attribution.id=PURPLE-2026-07 -p 80,443 <target>
+```
+
+Every request carries `X-Scan-Attribution: PURPLE-2026-07` and a matching User-Agent. The marker is deliberately conspicuous — it is an attribution aid, not an evasion technique.
+
+The reason it exists is in [Part 9](#part-9---purple-team-detection-coverage): the most common failure in detection-validation exercises is not a missed detection, it is a SOC that has learned to close scanning alerts unread because most scanning they see is their own team.
+
+---
+
+## Part 8 - Turning Scans Into Data
+
+Nmap's XML is the only output format that is both complete and machine-readable, and by default nothing consumes it. [`parsers/nmap_to_siem.py`](parsers/nmap_to_siem.py) converts a scan into rows.
+
+```bash
+python3 parsers/nmap_to_siem.py scan.xml                        # CSV
+python3 parsers/nmap_to_siem.py scan.xml --format json          # NDJSON for a SIEM
+python3 parsers/nmap_to_siem.py old.xml --diff new.xml          # what changed
+```
+
+### CIM field mapping
+
+The JSON output uses Splunk Common Information Model field names so records land in the right data model without a custom parser at index time:
+
+| Nmap concept | CIM field |
+|---|---|
+| host address | `dest` |
+| port number | `dest_port` |
+| protocol | `transport` |
+| service name | `service` |
+| product + version | `service_version` |
+| scanning host | `src` |
+
+That feeds the [Splunk project](https://github.com/jesse12-21/splunk-siem-analysis) directly.
+
+### Diffing is the part that matters
+
+A single scan is a snapshot. The security question is almost always **what changed**:
+
+```console
+$ python3 parsers/nmap_to_siem.py samples/scan-baseline.xml --diff samples/scan-followup.xml
+{
+  "appeared": [
+    { "dest": "198.51.100.10", "dest_port": 6379, "service": "redis",
+      "service_version": "Redis key-value store 7.0.15", "status": "open" }
+  ],
+  "changed": [
+    { "dest": "198.51.100.10", "dest_port": 80,
+      "was": "open Apache httpd 2.4.52", "now": "open Apache httpd 2.4.58" }
+  ],
+  "disappeared": [
+    { "dest": "198.51.100.20", "dest_port": 5432, "service": "postgresql" }
+  ]
+}
+```
+
+A newly exposed Redis instance on an otherwise unchanged host is the single most actionable thing a recurring scan produces. A snapshot never surfaces it.
+
+### Tested, not merely written
+
+Twenty pytest cases cover parsing, error handling, both output formats, and diff behaviour — including the cases that are easy to get wrong: down hosts with no `<ports>` element, filtered ports with no version data, and services with a product but no version.
+
+Filtered ports are deliberately **retained** rather than dropped. A filtered port is a finding — "we could not tell" is information — and discarding them makes a diff between two scans misleading.
+
+---
+
+## Part 9 - Purple-Team Detection Coverage
+
+Scanning is half a skill. The other half is knowing what a defender sees when you do it.
+
+This is the offensive project in a four-repository pipeline, and two of the others already contain detections for exactly this activity. That makes a closed loop available: **run the scan, check whether your own detections fired, record the gaps.**
+
+| Scan action | Suricata | Splunk | Outcome |
+|---|---|---|---|
+| Host discovery sweep | — | — | **Gap** |
+| SYN port scan | — | — | **Gap** |
+| Scanner user agent | SID 1000005 | T1595 | Both fire |
+| Content discovery / 404 burst | SID 1000013 | T1595.003 (risk 35) | Both fire |
+| NSE vuln scripts vs HTTP | SID 1000001-1000003 | T1190 (risk 60) | Payload-dependent |
+| TLS post-quantum probe | — | — | **Gap** |
+
+**The gaps are the useful part.** Three of six scan actions produce no detection at all in content written specifically to catch network reconnaissance. Two of those gaps are defensible — port-scan detection is high-volume and low-value on an internet-facing sensor — and one is a genuine oversight worth closing.
+
+That is the kind of finding a coverage exercise surfaces and a tabletop does not.
+
+Full methodology, the verification queries for both platforms, a result template, and the reasoning behind each gap: [`docs/purple-team-coverage.md`](docs/purple-team-coverage.md).
+
+---
+
+## Part 10 - Scanning Responsibly
+
+Port scanning is the one activity in this portfolio that is unlawful without permission. Analysing a capture, writing a detection, querying a SIEM — all operate on data you already hold. Scanning reaches out and touches infrastructure belonging to someone else.
+
+[`docs/authorization.md`](docs/authorization.md) covers the legal position, a pre-engagement checklist, and the operational safety points that matter more than they appear:
+
+- **Timing is a safety control, not a speed setting.** `-T4` is the tutorial default and is fine on a modern LAN. Legacy PLCs and HMIs have been knocked offline by ordinary SYN scans.
+- **A throttled scan is worse than no scan** if you do not know it was throttled. A host reporting no open ports because your packets were dropped looks identical to a hardened host.
+- **Scan output is sensitive.** A file listing every open port and unpatched version on a network is a target package. This repository's `.gitignore` excludes live scan output; the only XML tracked is the synthetic fixture set.
+
+[`profiles/`](profiles/) provides option sets from `PROFILE_QUIET` (serialised timing, rate-limited, for fragile and OT networks) through `PROFILE_THOROUGH`, plus IPv6 equivalents — because a dual-stack host firewalled on v4 is frequently wide open on v6.
+
+---
+
 ## 🔑 Key Nmap Commands Reference
 
 A quick reference of all scan techniques used throughout this project:
@@ -574,7 +801,7 @@ A quick reference of all scan techniques used throughout this project:
 | Component | Version | Purpose |
 |---|---|---|
 | **Ubuntu** | 24.04 LTS | Scanning host (VirtualBox VM) |
-| **Nmap** | 7.94SVN | Network scanning and vulnerability assessment |
+| **Nmap** | 7.94SVN (lab) / 7.99 (current) | Network scanning and vulnerability assessment. Screenshots were captured on 7.94SVN; CI validates against the runner's current Nmap. |
 | **NSE** | Built-in | Nmap Scripting Engine for advanced detection |
 | **Metasploitable 2** | 2.0.0 | Intentionally vulnerable target VM |
 | **VirtualBox** | Latest | VM hypervisor with host-only networking |
@@ -583,7 +810,7 @@ A quick reference of all scan techniques used throughout this project:
 
 ## 📚 Summary
 
-This project demonstrates practical network reconnaissance and vulnerability assessment skills through six progressive exercises:
+This project demonstrates practical network reconnaissance and vulnerability assessment skills through ten progressive exercises:
 
 1. **Host Discovery** — Used multiple probe techniques (ARP, ICMP, TCP) to identify 3 live hosts on the lab network, understanding the strengths and limitations of each method
 2. **Port Scanning** — Performed TCP SYN and UDP scans to map the target's attack surface, discovering 30 open TCP ports and 7 open/filtered UDP ports across 65,535 ports
@@ -591,10 +818,14 @@ This project demonstrates practical network reconnaissance and vulnerability ass
 4. **OS Fingerprinting** — Determined the target is running Linux kernel 2.6.9 - 2.6.33 through TCP/IP stack analysis, enabling targeted vulnerability research
 5. **Vulnerability Scanning** — Leveraged NSE scripts to confirm the vsftpd 2.3.4 backdoor (CVE-2011-2523), anonymous FTP access, writable SMB shares, exposed web directories, and unauthenticated user enumeration
 6. **Scan Automation** — Built scripts for repeatable assessments with structured XML/HTML output suitable for professional reporting
+7. **Custom NSE Development** — Wrote three Nmap scripts in Lua: a post-quantum TLS readiness probe that injects the ML-KEM code points Nmap's bundled library predates, a graded security-header audit, and a purple-team attribution marker. All are validated in CI by Nmap's own Lua engine, which reports syntax errors with file and line
+8. **Scan Data Engineering** — Built a parser converting Nmap XML into CSV and Splunk CIM-normalised NDJSON, with a diff mode that reports newly opened ports, closed ports, and version changes between two scans. Covered by 20 pytest cases including the cases that are easy to get wrong: down hosts, filtered ports, and services with a product but no version
+9. **Purple-Team Coverage** — Mapped every scan action to the detection content in the companion Suricata and Splunk projects and measured what fires. Three of six actions produce no detection at all; two of those gaps are defensible and one is a genuine oversight, which is the kind of finding a coverage exercise surfaces and a tabletop does not
+10. **Responsible Practice** — Documented authorisation requirements, a pre-engagement checklist, and scan profiles from `PROFILE_QUIET` for fragile OT networks through `PROFILE_THOROUGH`, treating timing as a safety control rather than a speed setting
 
 ### Skills Demonstrated
 
-`Network Reconnaissance` · `Port Scanning` · `Service Enumeration` · `OS Fingerprinting` · `Vulnerability Assessment` · `NSE Scripting` · `Linux Administration` · `Bash Scripting` · `Security Reporting` · `Attack Surface Mapping`
+`Network Reconnaissance` · `NSE Development (Lua)` · `Purple Teaming` · `Detection Coverage Analysis` · `Port Scanning` · `Service Enumeration` · `OS Fingerprinting` · `Vulnerability Assessment` · `Post-Quantum TLS` · `Python` · `Data Parsing & CIM Mapping` · `pytest` · `CI/CD` · `Bash Scripting` · `Attack Surface Management` · `Rules of Engagement`
 
 ---
 

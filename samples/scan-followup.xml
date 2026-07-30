@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE nmaprun>
+<!-- Synthetic fixture: a later scan of the same range. Relative to the baseline,
+     web01 has gained an exposed Redis port and upgraded Apache; db01 has lost
+     PostgreSQL. Used to exercise the diff mode. -->
+<nmaprun scanner="nmap" args="nmap -sV -oX followup.xml 198.51.100.0/24" start="1785984979" startstr="Mon Aug 03 09:00:00 2026" version="7.99" xmloutputversion="1.05">
+<scaninfo type="syn" protocol="tcp" numservices="1000"/>
+<host starttime="1785984979" endtime="1785984985"><status state="up" reason="syn-ack" reason_ttl="64"/>
+<address addr="198.51.100.10" addrtype="ipv4"/>
+<hostnames><hostname name="web01.example.invalid" type="PTR"/></hostnames>
+<ports>
+<port protocol="tcp" portid="22"><state state="open" reason="syn-ack" reason_ttl="64"/><service name="ssh" product="OpenSSH" version="8.9p1 Ubuntu 3ubuntu0.4" method="probed" conf="10"/></port>
+<port protocol="tcp" portid="80"><state state="open" reason="syn-ack" reason_ttl="64"/><service name="http" product="Apache httpd" version="2.4.58" method="probed" conf="10"/></port>
+<port protocol="tcp" portid="443"><state state="open" reason="syn-ack" reason_ttl="64"/><service name="https" product="Apache httpd" version="2.4.58" method="probed" conf="10"/></port>
+<port protocol="tcp" portid="3306"><state state="filtered" reason="no-response" reason_ttl="0"/><service name="mysql" method="table" conf="3"/></port>
+<port protocol="tcp" portid="6379"><state state="open" reason="syn-ack" reason_ttl="64"/><service name="redis" product="Redis key-value store" version="7.0.15" method="probed" conf="10"/></port>
+</ports>
+</host>
+<host starttime="1785984979" endtime="1785984986"><status state="up" reason="syn-ack" reason_ttl="64"/>
+<address addr="198.51.100.20" addrtype="ipv4"/>
+<hostnames><hostname name="db01.example.invalid" type="PTR"/></hostnames>
+<ports>
+<port protocol="tcp" portid="22"><state state="open" reason="syn-ack" reason_ttl="64"/><service name="ssh" product="OpenSSH" version="8.9p1 Ubuntu 3ubuntu0.4" method="probed" conf="10"/></port>
+</ports>
+</host>
+<runstats><finished time="1785984986" elapsed="7.44"/><hosts up="2" down="1" total="3"/></runstats>
+</nmaprun>

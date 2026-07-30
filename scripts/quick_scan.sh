@@ -34,13 +34,17 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "[1/4] Top 100 ports (SYN scan)"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
-nmap -sS --top-ports 100 -T4 "$TARGET" --open
+# Scan ONCE into a grepable temp file, then both display and parse it.
+# The earlier version ran this identical scan twice — once to print, once to
+# extract ports with -oG — doubling both runtime and packets on the wire.
+SCAN_TMP=$(mktemp)
+trap 'rm -f "$SCAN_TMP"' EXIT
+
+nmap -sS --top-ports 100 -T4 "$TARGET" --open -oG "$SCAN_TMP"
 echo ""
 
-# Extract open ports for targeted scanning
-OPEN_PORTS=$(nmap -sS --top-ports 100 -T4 "$TARGET" --open \
-  -oG - 2>/dev/null | grep "Ports:" | grep -oP '\d+/open' | cut -d'/' -f1 | \
-  tr '\n' ',' | sed 's/,$//')
+OPEN_PORTS=$(grep "Ports:" "$SCAN_TMP" 2>/dev/null \
+  | grep -oE '[0-9]+/open' | cut -d'/' -f1 | paste -sd, - || true)
 
 if [ -z "$OPEN_PORTS" ]; then
     echo "No open ports found in top 100. Try a full scan with: sudo nmap -sS -p- $TARGET"

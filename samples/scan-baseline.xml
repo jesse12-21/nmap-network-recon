@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE nmaprun>
+<!-- Synthetic fixture modelled on real Nmap -oX output. Addresses are RFC 5737
+     documentation ranges and cannot match live infrastructure. -->
+<nmaprun scanner="nmap" args="nmap -sV -oX baseline.xml 198.51.100.0/24" start="1785380179" startstr="Mon Jul 27 09:00:00 2026" version="7.99" xmloutputversion="1.05">
+<scaninfo type="syn" protocol="tcp" numservices="1000"/>
+<host starttime="1785380179" endtime="1785380185"><status state="up" reason="syn-ack" reason_ttl="64"/>
+<address addr="198.51.100.10" addrtype="ipv4"/>
+<hostnames><hostname name="web01.example.invalid" type="PTR"/></hostnames>
+<ports>
+<port protocol="tcp" portid="22"><state state="open" reason="syn-ack" reason_ttl="64"/><service name="ssh" product="OpenSSH" version="8.9p1 Ubuntu 3ubuntu0.4" method="probed" conf="10"/></port>
+<port protocol="tcp" portid="80"><state state="open" reason="syn-ack" reason_ttl="64"/><service name="http" product="Apache httpd" version="2.4.52" method="probed" conf="10"/></port>
+<port protocol="tcp" portid="443"><state state="open" reason="syn-ack" reason_ttl="64"/><service name="https" product="Apache httpd" version="2.4.52" method="probed" conf="10"/></port>
+<port protocol="tcp" portid="3306"><state state="filtered" reason="no-response" reason_ttl="0"/><service name="mysql" method="table" conf="3"/></port>
+</ports>
+</host>
+<host starttime="1785380179" endtime="1785380186"><status state="up" reason="syn-ack" reason_ttl="64"/>
+<address addr="198.51.100.20" addrtype="ipv4"/>
+<hostnames><hostname name="db01.example.invalid" type="PTR"/></hostnames>
+<ports>
+<port protocol="tcp" portid="22"><state state="open" reason="syn-ack" reason_ttl="64"/><service name="ssh" product="OpenSSH" version="8.9p1 Ubuntu 3ubuntu0.4" method="probed" conf="10"/></port>
+<port protocol="tcp" portid="5432"><state state="open" reason="syn-ack" reason_ttl="64"/><service name="postgresql" product="PostgreSQL DB" version="14.9" method="probed" conf="10"/></port>
+</ports>
+</host>
+<host><status state="down" reason="no-response" reason_ttl="0"/>
+<address addr="198.51.100.99" addrtype="ipv4"/>
+</host>
+<runstats><finished time="1785380186" elapsed="7.12"/><hosts up="2" down="1" total="3"/></runstats>
+</nmaprun>

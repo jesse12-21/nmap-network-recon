@@ -1,0 +1,147 @@
+name: Validate Recon Toolkit
+
+# Every artifact in this repository is validated by the tool that will actually
+# run it: NSE scripts by the Nmap engine, Lua by luacheck, Bash by ShellCheck,
+# and the XML parser by pytest against real Nmap output structure.
+on:
+  push:
+    branches: [main]
+    paths: ['nse/**', 'parsers/**', 'tests/**', 'scripts/**', 'samples/**', 'profiles/**',
+            '.github/workflows/validate-recon.yml']
+  pull_request:
+    paths: ['nse/**', 'parsers/**', 'tests/**', 'scripts/**', 'samples/**']
+  workflow_dispatch:
+
+jobs:
+  nse:
+    name: NSE scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Nmap and luacheck
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y nmap lua5.4 luarocks
+          sudo luarocks install luacheck
+          nmap --version | head -1
+
+      - name: Verify required files are present in the checkout
+        run: |
+          # The repository's .gitignore excludes *.xml because live scan output
+          # lands in that format. The synthetic fixtures under samples/ are
+          # negated explicitly — if that negation is ever lost, pytest fails on
+          # a clean checkout while passing locally. Check it directly.
+          missing=0
+          for f in samples/scan-baseline.xml samples/scan-followup.xml \
+                   nse/tls-pq-readiness.nse nse/http-security-headers.nse \
+                   nse/http-scan-attribution.nse parsers/nmap_to_siem.py; do
+            if [ ! -f "$f" ]; then
+              echo "::error::$f is missing from the checkout — check .gitignore"
+              missing=1
+            else
+              echo "  present  $f"
+            fi
+          done
+          exit $missing
+
+      - name: Validate NSE with the Nmap engine
+        run: |
+          # `nmap --script-help` runs the script through Nmap's own Lua engine.
+          # A syntax error is reported with file and line. This is the closest
+          # equivalent to a compiler that NSE has.
+          fail=0
+          for s in nse/*.nse; do
+            out=$(nmap --script-help "./$s" 2>&1)
+            if echo "$out" | grep -q 'failed to initialize'; then
+              echo "::error::$s failed to load"
+              echo "$out" | grep 'nse_main' | head -2
+              fail=1
+            else
+              echo "  ok  $s"
+            fi
+          done
+          exit $fail
+
+      - name: Lint Lua
+        run: |
+          # NSE scripts declare globals (description, author, categories,
+          # portrule, action) that luacheck cannot know about, so they are
+          # allowlisted rather than suppressing the check entirely.
+          luacheck nse/ \
+            --globals description author license categories portrule action \
+                      hostrule prerule postrule dependencies \
+            --no-max-line-length \
+            --codes
+
+      - name: Required NSE metadata
+        run: |
+          # A script without categories will not run under --script safe or
+          # --script default, and one without a description is undiscoverable
+          # via --script-help. Both are silent failures.
+          fail=0
+          for s in nse/*.nse; do
+            for field in description author license categories; do
+              grep -q "^${field}" "$s" || { echo "::error::$s missing '$field'"; fail=1; }
+            done
+          done
+          [ "$fail" -eq 0 ] && echo "All NSE scripts carry required metadata."
+          exit $fail
+
+  parser:
+    name: XML parser
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: pip install pytest ruff
+
+      - name: Lint
+        run: ruff check parsers/ tests/
+
+      - name: Tests
+        run: python -m pytest tests/ -v
+
+      - name: Fixtures are valid XML and are real Nmap output shape
+        run: |
+          python - <<'PY'
+          import xml.etree.ElementTree as ET, glob, sys
+          fail = False
+          for f in sorted(glob.glob('samples/*.xml')):
+              root = ET.parse(f).getroot()
+              if root.tag != 'nmaprun':
+                  print(f"::error::{f} root is <{root.tag}>, expected <nmaprun>")
+                  fail = True
+              else:
+                  print(f"  ok  {f}  ({len(root.findall('host'))} hosts)")
+          sys.exit(1 if fail else 0)
+          PY
+
+      - name: End-to-end parser run
+        run: |
+          python parsers/nmap_to_siem.py samples/scan-baseline.xml > /tmp/out.csv
+          python parsers/nmap_to_siem.py samples/scan-baseline.xml --format json > /tmp/out.json
+          python parsers/nmap_to_siem.py samples/scan-baseline.xml --diff samples/scan-followup.xml > /tmp/diff.json
+          echo "  csv rows:  $(( $(wc -l < /tmp/out.csv) - 1 ))"
+          echo "  json lines: $(wc -l < /tmp/out.json)"
+          python -c "import json;d=json.load(open('/tmp/diff.json'));print('  diff: %d appeared, %d disappeared, %d changed' % (len(d['appeared']),len(d['disappeared']),len(d['changed'])))"
+
+  scripts:
+    name: Shell scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: sudo apt-get update -qq && sudo apt-get install -y shellcheck
+      - name: Syntax
+        run: for f in scripts/*.sh; do bash -n "$f" && echo "  ok $f"; done
+      - name: ShellCheck
+        run: shellcheck --severity=warning scripts/*.sh
+      - name: Executable bit
+        run: |
+          fail=0
+          for f in scripts/*.sh; do
+            [ -x "$f" ] || { echo "::error::$f not executable"; fail=1; }
+          done
+          exit $fail
